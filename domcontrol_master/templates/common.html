@@ -1,0 +1,224 @@
+{% import 'switch.html' as switch %}
+
+{% macro nice_measure(measure) -%}
+    {% for metric in measure.metrics %}
+      <img
+        src="static/{{metric}}.png"
+        width="16"
+        height="16"
+        title="{{metric}}"
+        alt="{{metric}}"
+      >
+      {{ measure.__dict__[metric].__str__().decode('utf-8') }},
+    {% endfor %}
+
+{%- endmacro %}
+
+
+{% macro actor_type(type) -%}
+  <img
+    src="static/{{type}}.png"
+    width="16"
+    height="16"
+    title="{{type}}"
+    alt="{{type}}"
+  >
+{%- endmacro %}
+
+
+{% macro actor_limits(agent, zone, actor) -%}
+  <form
+  >
+    <label>active</label>
+    <input
+      style="width: 42px;"
+      type="number"
+      value="{{actor['active_time_limit']}}"
+      onchange="set_actor_limit(
+        '{{agent}}',
+        '{{zone}}',
+        '{{actor['name']}}',
+        'active_time_limit',
+        $(this).val()
+      );"
+    />
+    <label>inactive</label>
+    <input
+      style="width: 42px;"
+      type="number"
+      value="{{actor['inactive_time_limit']}}"
+      id="{{id}}"
+      onchange="set_actor_limit(
+        '{{agent}}',
+        '{{zone}}',
+        '{{actor['name']}}',
+        'inactive_time_limit',
+        $(this).val()
+      );"
+    />
+  </form>
+{%- endmacro %}
+
+
+
+{% macro actor_action(action) -%}
+  <img
+    src="static/{{action}}.png"
+    width="16"
+    height="16"
+    alt="{{action}}"
+    title="{{action}}"
+  >
+{%- endmacro %}
+
+
+{% macro actor_schedule(schedules, schedule, enabled, id) -%}
+  <select
+    class="schedules_select"
+    id={{id}}
+    {% if not enabled %}
+    disabled="true"
+    style="color: grey;"
+    {% endif %}
+    onchange="set_actor_schedule('{{id}}');"
+  >
+  {% for sched_iter in schedules %}
+    <option
+      {{sched_iter['name'] == schedule and 'selected'}}
+    >{{sched_iter['name']}}</option>
+  {% endfor %}
+  </select>
+{%- endmacro %}
+
+
+
+{% macro zone_sensors(sensors) -%}
+  <h3>
+    <img src="static/sensors.png" height="32" width="32">
+    Sensors
+  </h3>
+  <table
+    class="table table-striped table-hover table-responsive"
+    title="Sensors"
+  >
+    <th>ID</th>
+    {% for key in sensors[0].keys() %}
+      {% if key not in ['name', 'last_measure'] %}
+        <th>{{ key.replace('_' ,' ').capitalize() }}</th>
+      {% endif %}
+    {% endfor %}
+    <th>Last measure</th>
+    {% for sensor in sensors %}
+      {{ sensor_row(sensor) }}
+    {% endfor %}
+  </table>
+{%- endmacro %}
+
+
+{% macro zone_actors(agent, zone) -%}
+  <div class="row">
+    <div class="col-md-4">
+      <h3>
+        <img src="static/actors.png" height="32" width="32">
+        Actors
+      </h3>
+    </div>
+    <div class="col-md-4 col-md-offset-4">
+      <h3><a href="{{agent}}/schedule">See Schedules</a></h1>
+    </div>
+  </div>
+  <table
+    class="table table-striped table-hover table-responsive"
+    title="Actors"
+  >
+    <th>Name</th>
+    {% for key in zone['actors'][0].keys() %}
+      {% if key not in [
+          'name', 'active', 'type', 'auto', 'action', 'schedule',
+          'inactive_time_limit', 'active_time_limit'
+      ] %}
+        <th>
+          {{
+            key == 'active'
+            and 'Status'
+            or key.replace('_', ' ').capitalize()
+          }}
+        </th>
+      {% endif %}
+    {% endfor %}
+    <th>Metric</th>
+    <th>Action</th>
+    <th>Limits</th>
+    <th>Schedule</th>
+    <th>Status</th>
+    <th>Mode</th>
+
+    {% for actor in zone['actors'] %}
+      {{ actor_row(agent, zone, actor) }}
+    {% endfor %}
+  </table>
+{%- endmacro %}
+
+
+{% macro sensor_row(sensor) %}
+  <tr>
+    <th>{{ sensor['name'] }}</th>
+    {% for key, val in sensor.items() %}
+      {% if key not in ['name', 'last_measure'] %}
+        <td>{{ val }}</td>
+      {% endif %}
+    {% endfor %}
+    <td>{{sensor['last_measure'] and nice_measure(sensor['last_measure'])}}</td>
+  </tr>
+{%- endmacro %}
+
+
+{% macro actor_row(agent, zone, actor) -%}
+  <tr>
+    <th>{{ actor['name'] }}</th>
+    {% for key, val in actor.items() %}
+      {% if key not in [
+          'name', 'active', 'type', 'auto', 'action', 'schedule',
+          'inactive_time_limit', 'active_time_limit'
+      ] %}
+        <td>{{ val }}</td>
+      {% endif %}
+    {% endfor %}
+    <td>{{ actor_type(actor['type']) }}</td>
+    <td>{{ actor_action(actor['action']) }}</td>
+    <td>{{
+      actor_limits(
+        agent,
+        zone['name'],
+        actor,
+      )
+    }}</td>
+    <td>{{
+      actor_schedule(
+        zone['schedules'],
+        actor['schedule'],
+        actor['auto'],
+        '_'.join([agent, zone['name'], actor['name'], 'schedule']),
+      )
+    }}</td>
+    <td>{{
+      switch.switch(
+        '_'.join([agent, zone['name'], actor['name'], 'onoff']),
+        'On',
+        'Off',
+        52,
+        actor['active'],
+        not actor['auto'],
+        )
+    }}</td>
+    <td>{{
+      switch.switch(
+        '_'.join([agent, zone['name'], actor['name'], 'auto']),
+        'Auto',
+        'Manual',
+        74,
+        actor['auto']
+        )
+    }}</td>
+  </tr>
+{%- endmacro %}

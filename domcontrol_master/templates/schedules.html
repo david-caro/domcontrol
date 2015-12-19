@@ -1,0 +1,36 @@
+{% extends "bootstrap/base.html" %}
+{% block title %}DomControl: Schedules{% endblock %}
+{% block scripts %}
+  {{super()}}
+  <script src="{{url_for('.static', filename='jquery.json.js')}}"></script>
+{% endblock %}
+{% block content %}
+  <div class="container">
+  <h1> Agent <a href="{{ agent.url }}">{{ agent.name }}</a> schedules</h1>
+  {% for schedule in agent['zones'][0]['schedules'] %}
+    <h2> Schedule {{schedule['name']}}</h2>
+    <table
+      class="table table-striped table-hover table-responsive"
+    >
+    {%for day in ('monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+    'saturday', 'sunday')%}
+    <tr>
+      <th>{{day}}</th>
+      {%for range in schedule[day]%}
+      <td>{{time_to_str(range['start'])}}-{{time_to_str(range['end'])}}</td>
+      {%endfor%}
+
+    {% endfor %}
+  </table>
+  {%endfor%}
+  </div>
+{% endblock %}
+
+
+{%- macro time_to_str(time) %}
+  {%if time%}
+    {{'%02.0f:%02.0f' % (time / 60, time % 60)}}
+  {%else%}
+    00:00
+  {%endif%}
+{% endmacro -%}

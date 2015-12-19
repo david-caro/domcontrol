@@ -1,0 +1,55 @@
+{% extends "bootstrap/base.html" %}
+{% import 'common.html' as common %}
+{% block metas %}
+  {{super()}}
+  <meta http-equiv="refresh" content="60">
+{% endblock %}
+{% block title %}DomControl{% endblock %}
+{% block scripts %}
+  {{super()}}
+  <script src="{{url_for('.static', filename='jquery.json.js')}}"></script>
+  <script src="{{url_for('.static', filename='actor.js')}}"></script>
+{% endblock %}
+{% block content %}
+  <div class="container">
+  {% for agent in agents %}
+  <h1> Agent <a href="{{ agent.url }}">{{ agent.name }}</a> </h1>
+    {% for zone in agent.zones %}
+        <h2> Zone
+        <a href="{{ agent.url + '/' + zone['name'] }}">{{ zone['name'] }}</a>
+        </h2>
+
+        <b>Current measure:</b>
+        {{ zone['last_measure'] and common.nice_measure(zone['last_measure']) }}
+
+        <div class="row">
+        {% if zone['sensors'] %}
+        <div class="col-md-6">
+            {{ common.zone_sensors(zone['sensors']) }}
+        </div>
+        {% endif %}
+
+        {% if zone['actors'] %}
+        <div class="col-md-6">
+            {{ common.zone_actors(
+                agent.name,
+                zone,
+            ) }}
+        </div>
+        {% endif %}
+        </div>
+
+        {% if zone.get('graph_url', None) %}
+        <iframe
+            src="{{ zone['graph_url'] }}"
+            width="100%" height="520"
+            frameborder="0"
+        >
+        </iframe>
+        {% endif %}
+
+    {% endfor %}
+
+  {% endfor %}
+  </div>
+{% endblock %}

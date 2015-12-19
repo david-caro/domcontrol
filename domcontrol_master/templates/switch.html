@@ -1,0 +1,75 @@
+{% macro switch(id, onlabel, offlabel, width, active, enabled=True) -%}
+  <style>
+    .switch_{{id}} {
+        position: relative; width: {{width}}px;
+        -webkit-user-select:none; -moz-user-select:none; -ms-user-select: none;
+    }
+    .switch_{{id}}-checkbox {
+        display: none;
+    }
+    .switch_{{id}}-label {
+        display: block; overflow: hidden; cursor: pointer;
+        border: 2px solid #999999; border-radius: 13px;
+    }
+    .switch_{{id}}-inner {
+        display: block; width: 200%; margin-left: -100%;
+        transition: margin 0.3s ease-in 0s;
+    }
+    .switch_{{id}}-inner:before, .switch_{{id}}-inner:after {
+        display: block; float: left; width: 50%; height: 14px;
+        padding: 0; line-height: 14px;
+        font-size: 12px; color: white;
+        font-family: Trebuchet, Arial,
+        sans-serif; font-weight: bold;
+        box-sizing: border-box;
+    }
+    .switch_{{id}}-inner:before {
+        content: "{{onlabel}}";
+        padding-left: 8px;
+        background-color: #3EC234; color: #FFFFFF;
+    }
+    .switch_{{id}}-inner:after {
+        content: "{{offlabel}}";
+        padding-right: 8px;
+        background-color: #BD0000; color: #FFFFFF;
+        text-align: right;
+    }
+    .switch_{{id}}-switch {
+        display: block; width: 20px; margin: -3px;
+        background: #FFFFFF;
+        position: absolute; top: 0; bottom: 0;
+        right: {{width - 12}}px;
+        border: 2px solid #999999; border-radius: 13px;
+        transition: all 0.3s ease-in 0s;
+    }
+    .switch_{{id}}-checkbox:checked + .switch_{{id}}-label .switch_{{id}}-inner {
+        margin-left: 0;
+    }
+    .switch_{{id}}-checkbox:checked + .switch_{{id}}-label .switch_{{id}}-switch {
+        right: 0px;
+    }
+  </style>
+  <div class="switch_{{id}}">
+    <input
+      onchange="toggle_actor_switch('myswitch_{{id}}');"
+      type="checkbox"
+      name="switch_{{id}}"
+      class="switch_{{id}}-checkbox"
+      id="myswitch_{{id}}"
+      {% if not enabled %}
+      disabled="true"
+      {% endif %}
+      {{ active and 'checked' or '' }}
+    >
+    <label class="switch_{{id}}-label" for="myswitch_{{id}}">
+      <span class="switch_{{id}}-inner"></span>
+      <span
+        {% if not enabled %}
+        style="width: 0px; height: 0px; border: 0px;"
+        {% endif %}
+        class="switch_{{id}}-switch"
+        id="switch_{{id}}-switch"
+      ></span>
+    </label>
+  </div>
+{%- endmacro %}

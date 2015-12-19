@@ -1,0 +1,4 @@
+flask
+RPi.GPIO
+Adafruit_Python_DHT
+domcontrol_common
