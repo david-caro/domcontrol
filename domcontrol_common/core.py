@@ -21,6 +21,7 @@ import RPi.GPIO as GPIO
 
 from . import (
     utils,
+    actors as mod_actors,
     sensors as mod_sensors,
     metrics as mod_metrics,
     schedule as mod_schedule,
@@ -40,6 +41,7 @@ class Zone(object):
         self.sensors = {}
         self.last_measure = None
         self.schedules = {}
+        self.measures = {}
 
     def add_actor(self, actor):
         self.actors[actor.name] = actor
@@ -58,22 +60,50 @@ class Zone(object):
         logging.info('zone.%s::Got measure %s', self.name, self.last_measure)
         self.check_measure()
 
-    def check_measure(self):
-        if not self.last_measure:
+    def check_measure(self, measure=None, sensor=None, metrics=None):
+        if not self.last_measure and not measure:
             return
+        elif not measure:
+            measure = self.last_measure
+        elif not self.last_measure:
+            measure = measure
+        else:
+            measure = mod_metrics.get_mean_measure([
+                measure,
+                self.last_measure,
+            ])
+
+        if sensor:
+            self.measures[sensor] = measure
+
+        logging.debug('zone.%s::Checking measure %s', self.name, measure)
 
         logging.info(
             'zone.%s::Checking if any actor has to act on it',
             self.name,
         )
-        for actor in self.actors.values():
-            actor.parse_measure(
-                measure=self.last_measure,
-                schedule=self.schedules[actor.schedule]
+        if metrics:
+            logging.info(
+                'zone.%s::   filtering by metrics %s',
+                self.name,
+                metrics
             )
+        for actor in self.actors.values():
+            logging.debug('  Checking %s', actor.name)
+            if not metrics or actor.watches_metrics(metrics):
+                actor.parse_measure(
+                    measure=measure,
+                    schedule=self.schedules[actor.schedule]
+                )
 
     def get_measure(self):
-        return get_measure(self.sensors.values())
+        for sensor_name, sensor in self.sensors.items():
+            if STOP.is_set():
+                raise RuntimeError('Stopping')
+
+            self.measures[sensor_name] = sensor.read()
+
+        return mod_metrics.get_mean_measure(self.measures.values())
 
     def to_dict(self):
         zone = {
@@ -96,178 +126,10 @@ class Zone(object):
         return zone
 
 
-class Actor(object):
-    def __init__(
-        self,
-        name,
-        type,
-        pin,
-        action,
-        active_time_limit,
-        inactive_time_limit,
-        schedule,
-        zone='default',
-        auto_mode=True,
-    ):
-        self.name = name
-        self.type = type
-        self.pin = int(pin)
-        self.zone = zone
-        self.auto = auto_mode
-        self.schedule = schedule
-        self.action = action
-        self.active_time_limit = active_time_limit
-        self.inactive_time_limit = inactive_time_limit
-        self.setup()
-
-    def get_active(self):
-        return bool(GPIO.input(self.pin))
-
-    def set_active(self, value):
-        if value:
-            self.activate()
-        else:
-            self.deactivate()
-
-    active = property(get_active, set_active)
-
-    def __nonzero__(self):
-        return self.active
-
-    def log_info(self, msg, *args):
-        LOGGER.info('%s::%s::%s' % (self.zone, self.name, msg), *args)
-
-    def log_debug(self, msg, *args):
-        LOGGER.debug('%s::%s::%s' % (self.zone, self.name, msg), *args)
-
-    def setup(self):
-        self.log_debug('Setting up')
-        GPIO.setup(
-            channel=self.pin,
-            direction=GPIO.OUT,
-        )
-
-    def activate(self):
-        if not self.active:
-            self.log_info('Activated')
-            GPIO.output(
-                self.pin,
-                GPIO.HIGH,
-            )
-        else:
-            self.log_info('Already active')
-
-    def deactivate(self):
-        if self.active:
-            self.log_info('Deactivating')
-            GPIO.output(
-                self.pin,
-                GPIO.LOW,
-            )
-        else:
-            self.log_info('Already inactive')
-
-    def cleanup(self):
-        GPIO.cleanup(channel=self.pin)
-
-    def parse_measure(self, measure, schedule):
-        if not self.auto:
-            return
-
-        should_trigger = schedule.should_trigger(
-            measure=measure,
-            metric=self.type,
-            action=self.action,
-            active_limit=self.active_time_limit,
-            inactive_limit=self.inactive_time_limit,
-        )
-
-        if should_trigger is None:
-            return
-        elif should_trigger:
-            self.activate()
-        else:
-            self.deactivate()
-
-    def to_dict(self):
-        return {
-            'name': self.name,
-            'pin': self.pin,
-            'type': self.type,
-            'zone': self.zone,
-            'auto': self.auto,
-            'action': self.action,
-            'schedule': self.schedule,
-            'active': self.active,
-            'active_time_limit': self.active_time_limit,
-            'inactive_time_limit': self.inactive_time_limit,
-        }
-
-    def __repr__(self):
-        return (
-            'Actor(%s, pin=%d, type=%s, active=%s, '
-            'zone=%s, schedule=%s)'
-            % (
-                self.name,
-                self.pin,
-                self.type,
-                self.active,
-                self.zone,
-                self.schedule,
-            )
-        )
-
-    def __str__(self):
-        return self.__repr__()
-
-
-def get_actors(config):
-    for section in config.sections():
-        if section.split('.', 1)[0] == 'actor':
-            actor_type = config.get(section, 'type')
-            actor_pin = config.get(section, 'pin')
-            actor_name = section.split('.', 1)[-1]
-            actor_action = config.get(section, 'action')
-            actor_zone = config.get(section, 'zone')
-            actor_schedule = config.get(section, 'schedule')
-            actor_active_time_limit = utils.getfloat(
-                config,
-                section,
-                'active_time_limit'
-            )
-            actor_inactive_time_limit = utils.getfloat(
-                config,
-                section,
-                'inactive_time_limit'
-            )
-            if actor_pin:
-                yield Actor(
-                    name=actor_name,
-                    pin=actor_pin,
-                    type=actor_type,
-                    action=actor_action,
-                    zone=actor_zone,
-                    schedule=actor_schedule,
-                    active_time_limit=actor_active_time_limit,
-                    inactive_time_limit=actor_inactive_time_limit,
-                )
-
-
-def get_measure(sensors):
-    measures = []
-    for sensor in sensors:
-        if STOP.is_set():
-            raise RuntimeError('Stopping')
-
-        measures.append(sensor.read())
-
-    return mod_metrics.get_mean_measure(measures)
-
-
 def load_zones(config):
     zones = {}
     sensors = list(mod_sensors.get_sensors(config))
-    actors = list(get_actors(config))
+    actors = list(mod_actors.get_actors(config))
     schedules = list(mod_schedule.get_schedules(config))
 
     for sensor in sensors:
@@ -275,6 +137,8 @@ def load_zones(config):
             zones[sensor.zone] = Zone(sensor.zone)
 
         zones[sensor.zone].add_sensor(sensor)
+
+        sensor.add_callback(zones[sensor.zone].check_measure)
 
     for actor in actors:
         if actor.zone not in zones:
@@ -317,9 +181,9 @@ def main_loop(config):
             return
 
         # busy sleep
-        for _ in range(10):
+        for _ in range(100):
             time.sleep(
-                float(config.getint('general', 'loop_sleep_time'))/10
+                float(config.getint('general', 'loop_sleep_time'))/100
             )
             if STOP.is_set():
                 return
@@ -335,3 +199,11 @@ def setup(config):
 
     GPIO.setwarnings(False)
     GPIO.setmode(pin_numbering)
+    GPIO.setwarnings(False)
+    GPIO.cleanup()
+    time.sleep(1)
+    GPIO.cleanup()
+
+
+def cleanup():
+    GPIO.cleanup()

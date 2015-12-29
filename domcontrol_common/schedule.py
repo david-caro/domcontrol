@@ -162,7 +162,7 @@ class WeekSchedule(object):
     def should_trigger(
         self,
         measure,
-        metric,
+        metrics,
         action,
         active_limit,
         inactive_limit,
@@ -184,21 +184,27 @@ class WeekSchedule(object):
         elif action == 'lower':
             limit = LimitRange(upper=limit)
 
-        value = getattr(measure, metric).value
-        res = limit.triggers_at(
-            metric_value=value,
-            action=action,
-        )
-        LOGGER.info(
-            'Checking %s against %s with action %s, with result %s',
-            value,
-            limit,
-            action,
-            res
-        )
-        return res
+        res = None
+        for metric in metrics:
+            value = getattr(measure, metric).value
+            new_res = limit.triggers_at(
+                metric_value=value,
+                action=action,
+            )
+            LOGGER.info(
+                'Checking %s against %s with action %s, with result %s',
+                value,
+                limit,
+                action,
+                new_res
+            )
+            res = (
+                new_res
+                if res is None or new_res
+                else res
+            )
 
-        return False
+        return res
 
 
     def __getitem__(self, key):

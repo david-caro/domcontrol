@@ -14,15 +14,19 @@
 # You should have received a copy of the GNU General Public License
 # along with domcontrol.  If not, see <http://www.gnu.org/licenses/>.
 #
+import ConfigParser
 import logging
 import time
+import threading
 from functools import partial
 
 import Adafruit_DHT
 import RPi.GPIO as GPIO
 
-from . import metrics
-from . import utils
+from . import (
+    metrics as mod_metrics,
+    utils,
+)
 
 
 #: Registry for sensor types
@@ -32,7 +36,7 @@ LOGGER = logging.getLogger(__name__)
 
 class MetaSensor(type):
     def __init__(cls, name, bases, dct):
-        if name != 'Sensor':
+        if name != 'Sensor' and not name.endswith('Mixin'):
             SENSORS[name] = cls
 
 
@@ -53,10 +57,13 @@ class Sensor(object):
         self.graphite_url = graphite_url
         self.zone = zone
         self.last_measure = None
+        self.log_debug('Initializing')
 
         for metric in self.METRICS:
-            if metric not in metrics.METRICS:
+            if metric not in mod_metrics.METRICS:
                 raise TypeError('Unknown metric %s' % metric)
+
+        self.log_debug('Loaded Sensor %s', vars(self))
 
     def log_info(self, msg, *args):
         LOGGER.info('%s::%s::%s' % (self.zone, self.name, msg), *args)
@@ -64,16 +71,10 @@ class Sensor(object):
     def log_debug(self, msg, *args):
         LOGGER.debug('%s::%s::%s' % (self.zone, self.name, msg), *args)
 
+    def add_callback(self, func):
+        pass
+
     def read(self):
-        """
-        Gets a valid read measure (right now it has to retry a few times, read a
-        couple values and returns the max as there are low value outliers)
-
-        Very dependent on the hardware
-
-        Returns:
-            Measure: timestamp, temperature and humidity reads
-        """
         raise NotImplementedError()
 
     def to_dict(self):
@@ -97,15 +98,96 @@ class Sensor(object):
         return self.__repr__()
 
 
-class RaspberrySensorMixin(object):
-    def setup(self):
+class RaspberrySensorMixin(Sensor):
+    def __init__(self, *args, **kwargs):
+        super(RaspberrySensorMixin, self).__init__(*args, **kwargs)
+        self.setup()
+
+    def setup(self, **kwargs):
+        self.log_debug('Setting up on pin %s: %s', self.pin, kwargs)
         GPIO.setup(
             channel=self.pin,
             direction=GPIO.IN,
+            **kwargs
         )
 
 
-class DHTSensor(Sensor, RaspberrySensorMixin):
+class EventRaspberrySensorMixin(RaspberrySensorMixin):
+    EVENT = GPIO.RISING
+    LOCK = threading.Lock()
+
+    def __init__(self, *args, **kwargs):
+        super(EventRaspberrySensorMixin, self).__init__(*args, **kwargs)
+        self.callbacks = []
+        GPIO.add_event_detect(
+            self.pin,
+            self.EVENT,
+            bouncetime=1000,
+        )
+        GPIO.add_event_callback(
+            self.pin,
+            self.event_happened,
+        )
+        self.log_debug('Initialized event sensor')
+
+    def add_callback(self, func):
+        self.log_debug('Adding callback %s', func)
+        self.callbacks.append(func)
+
+    def event_happened(self, pin):
+        if self.LOCK.locked():
+            self.log_debug('\n    EVENT-- ignoring, already parsing event')
+            return
+
+        self.LOCK.acquire()
+        try:
+            if pin != self.pin:
+                self.log_debug('\n    EVENT-- ignoring, wrong channel %s' % pin)
+                return
+
+            self.log_debug('\n    EVENT-- Event detected on channel %s' % pin)
+            measure = {}
+            for metric in self.METRICS:
+                measure[metric] = int(time.time())
+
+            self.last_measure = mod_metrics.Measure(**measure)
+
+            for callback in self.callbacks:
+                callback(
+                    measure=self.last_measure,
+                    sensor=self.name,
+                    metrics=self.METRICS,
+                )
+        finally:
+            self.LOCK.release()
+
+    def read(self):
+        self.log_debug('value=%s' % self.last_measure)
+        return self.last_measure
+
+
+class LightSensor(RaspberrySensorMixin):
+    METRICS = [
+        'luminosity'
+    ]
+
+    def read(self):
+        value = GPIO.input(self.pin) and 1 or 0
+        self.last_measure = mod_metrics.Measure(
+            luminosity=value
+        )
+        self.log_debug('value=%s' % self.last_measure)
+        return self.last_measure
+
+
+class PresenceSensor(EventRaspberrySensorMixin):
+    METRICS = [
+        'presence'
+    ]
+    EVENT = GPIO.FALLING
+
+
+class DHTSensor(RaspberrySensorMixin):
     #: Match between config sensor type option and the lib  type
     DHT_SENSOR_TYPES = {
         '11': Adafruit_DHT.DHT11,
@@ -122,7 +204,13 @@ class DHTSensor(Sensor, RaspberrySensorMixin):
         super(DHTSensor, self).__init__(*args, **kwargs)
         dht_type = config(option='dht_type')
         self.dht_type = self.DHT_SENSOR_TYPES[dht_type]
-        self.setup()
+        for metric in self.METRICS:
+            try:
+                offset = float(config(option=metric + '_offset'))
+            except ConfigParser.NoOptionError:
+                offset = None
+
+            setattr(self, metric + '_offset', offset)
 
     def read(self):
         """
@@ -141,6 +229,10 @@ class DHTSensor(Sensor, RaspberrySensorMixin):
         prev_temp = None
 
         while humidity is None:
+            self.log_debug(
+                'Doing a read loop, prev_hum=%s, humidity=%s'
+                % (prev_hum, humidity)
+            )
             if prev_hum is None:
                 prev_hum, prev_temp = Adafruit_DHT.read_retry(
                     self.dht_type,
@@ -153,10 +245,18 @@ class DHTSensor(Sensor, RaspberrySensorMixin):
                 )
             time.sleep(1)
 
-        norm_temp = max((temperature, prev_temp))
-        norm_hum = max((humidity, prev_hum))
+        norm_temp = (
+            self.temperature_offset + max((temperature, prev_temp))
+            if self.temperature_offset is not None
+            else max((temperature, prev_temp))
+        )
+        norm_hum = (
+            self.humidity_offset + max((humidity, prev_hum))
+            if self.humidity_offset is not None
+            else max((humidity, prev_hum))
+        )
 
-        self.last_measure = metrics.Measure(
+        self.last_measure = mod_metrics.Measure(
             temperature=norm_temp,
             humidity=norm_hum,
         )

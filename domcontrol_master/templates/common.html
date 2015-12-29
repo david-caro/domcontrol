@@ -2,27 +2,50 @@
 
 {% macro nice_measure(measure) -%}
     {% for metric in measure.metrics %}
-      <img
-        src="static/{{metric}}.png"
-        width="16"
-        height="16"
-        title="{{metric}}"
-        alt="{{metric}}"
-      >
-      {{ measure.__dict__[metric].__str__().decode('utf-8') }},
+      {% if measure.__dict__[metric].__str__().decode('utf-8') != 'None' %}
+        {% if metric == 'luminosity' %}
+          {{nice_luminosity(measure.__dict__[metric].__str__().decode('utf-8'))}}
+        {% else %}
+          <img
+            src="static/{{metric}}.png"
+            width="16"
+            height="16"
+            title="{{metric}}"
+            alt="{{metric}}"
+          >
+          {{ measure.__dict__[metric].__str__().decode('utf-8') }}
+        {%endif%}
+      {%endif%}
     {% endfor %}
 
 {%- endmacro %}
 
 
-{% macro actor_type(type) -%}
+{% macro nice_luminosity(value) -%}
   <img
-    src="static/{{type}}.png"
+    {% if value == '0' %}
+      src="static/luminosity_off.png"
+    {%else%}
+      src="static/luminosity.png"
+    {%endif%}
     width="16"
     height="16"
-    title="{{type}}"
-    alt="{{type}}"
+    title="luminosity"
+    alt="luminosity"
   >
+{%- endmacro %}
+
+
+{% macro actor_metrics(metrics) -%}
+  {%for metric in metrics %}
+    <img
+      src="static/{{metric}}.png"
+      width="16"
+      height="16"
+      title="{{metric}}"
+      alt="{{metric}}"
+    >
+  {%endfor%}
 {%- endmacro %}
 
 
@@ -134,8 +157,8 @@
     <th>Name</th>
     {% for key in zone['actors'][0].keys() %}
       {% if key not in [
-          'name', 'active', 'type', 'auto', 'action', 'schedule',
-          'inactive_time_limit', 'active_time_limit'
+          'name', 'active', 'watches', 'auto', 'action', 'schedule',
+          'inactive_time_limit', 'active_time_limit', 'affects'
       ] %}
         <th>
           {{
@@ -146,7 +169,8 @@
         </th>
       {% endif %}
     {% endfor %}
-    <th>Metric</th>
+    <th>Affects Metrics</th>
+    <th>Watches Metrics</th>
     <th>Action</th>
     <th>Limits</th>
     <th>Schedule</th>
@@ -178,13 +202,14 @@
     <th>{{ actor['name'] }}</th>
     {% for key, val in actor.items() %}
       {% if key not in [
-          'name', 'active', 'type', 'auto', 'action', 'schedule',
-          'inactive_time_limit', 'active_time_limit'
+          'name', 'active', 'watches', 'auto', 'action', 'schedule',
+          'inactive_time_limit', 'active_time_limit', 'affects'
       ] %}
         <td>{{ val }}</td>
       {% endif %}
     {% endfor %}
-    <td>{{ actor_type(actor['type']) }}</td>
+    <td>{{ actor_metrics(actor['affects']) }}</td>
+    <td>{{ actor_metrics(actor['watches']) }}</td>
     <td>{{ actor_action(actor['action']) }}</td>
     <td>{{
       actor_limits(

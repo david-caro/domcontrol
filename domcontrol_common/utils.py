@@ -24,14 +24,14 @@ LOGGER = logging.getLogger(__name__)
 def format_graphite(measure, prefix=''):
     stats = []
     prefix = prefix and '.' + prefix
-    for metric in measure.metrics:
+    for metric, value, timestamp in measure.to_graphite():
         stats.append(
             'lab.rp1%s.%s %s %s'
-            % (prefix, metric, getattr(measure, metric).value, measure.timestamp)
+            % (prefix, metric, value, timestamp)
         )
         LOGGER.info(
             'lab.rp1%s.%s %s %s'
-            % (prefix, metric, getattr(measure, metric).value, measure.timestamp)
+            % (prefix, metric, value, timestamp)
         )
 
     return '\n'.join(stats) + '\n'

@@ -65,13 +65,14 @@ def main(args=None):
         target=core.main_loop,
         args=[conf.CONFIG]
     )
-    controller.start()
 
     try:
+        controller.start()
         LOGGER.info('Starting web server')
         web.app.run(args.with_web_server)
     except:
         core.STOP.set()
+        core.cleanup()
         raise
 
 
