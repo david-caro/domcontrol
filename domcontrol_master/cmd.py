@@ -29,9 +29,6 @@ LOGGER = logging.getLogger('cli')
 def main(args=None):
     logging.basicConfig(level=logging.INFO)
 
-    if not args:
-        args = sys.argv[0:]
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-c', '--config',
@@ -42,10 +39,14 @@ def main(args=None):
         action='store_true',
     )
     parser.add_argument(
-        '-l', '--listen',
+        '--host',
         default='127.0.0.1',
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        '-p', '--port',
+        default='5000',
+    )
+    args = parser.parse_args(args)
 
     if args.verbose:
         logging.root.setLevel(logging.DEBUG)
@@ -58,8 +59,8 @@ def main(args=None):
     # No need for any external service, this can be run without internet
     # access
     web.app.config['BOOTSTRAP_SERVE_LOCAL'] = True
-    web.app.run(args.listen)
+    web.app.run(host=args.host, port=args.port)
 
 
 if __name__ == '__main__':
-    main(sys.argv[1:])
+    main(sys.argv)

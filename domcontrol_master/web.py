@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with domcontrol.  If not, see <http://www.gnu.org/licenses/>.
 #
-import datetime
 import functools
 import json
 import os
@@ -27,7 +26,7 @@ from flask import (
     redirect,
 )
 
-from flask.ext.bootstrap import Bootstrap
+from flask_bootstrap import Bootstrap
 from domcontrol_common import (
     conf,
     metrics as mod_metrics,

@@ -47,6 +47,12 @@ def send_to_graphite(measure, graphite_url, prefix=''):
     try:
         sock.connect((server, port))
         sock.sendall(message)
+    except Exception as err:
+        LOGGER.error(
+            'Got exception %s when trying to send to graphite, continuing...'
+            % err
+        )
+
     finally:
         sock.close()
 

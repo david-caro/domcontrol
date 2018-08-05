@@ -14,15 +14,20 @@
 # along with domcontrol.  If not, see <http://www.gnu.org/licenses/>.
 #
 import logging
+import os
 import time
 import sys
 from functools import partial
 
-import RPi.GPIO as GPIO
-
 from . import (
     utils,
 )
+
+
+if os.environ.get('DEBUG_MODE') == 'true':
+    from .fakes import DummyGPIO as GPIO
+else:
+    import RPi.GPIO as GPIO
 
 
 #: Registry for actor types
@@ -213,7 +218,6 @@ class PresenceLightActor(RaspberryActorMixin):
             inactive_limit=self.inactive_time_limit and sys.maxint,
         )
 
-
         if (
             should_trigger is None
             or measure.presence.value is None
@@ -225,25 +229,38 @@ class PresenceLightActor(RaspberryActorMixin):
             should_trigger
             and (
                 measure.luminosity.value is None
-                or int(time.time()) - measure.presence.value < 250
+                or int(time.time()) - measure.presence.value < 150
             )
         ):
-            self.log_debug(
-                'Activating, should_trigger=%s, last presence: %s, time: %s',
-                should_trigger,
-                measure.presence.value,
-                int(time.time())
-            )
-            self.activate()
+            if measure.luminosity.value:
+                self.log_debug(
+                    'Keeping as is, should_trigger=%s, luminosity=%s, '
+                    'last presence: %s, time: %s',
+                    should_trigger,
+                    measure.luminosity.value,
+                    measure.presence.value,
+                    int(time.time())
+                )
+            else:
+                self.log_debug(
+                    'Activating, should_trigger=%s, luminosity=%s, '
+                    'last presence: %s, time: %s',
+                    should_trigger,
+                    measure.luminosity.value,
+                    measure.presence.value,
+                    int(time.time())
+                )
+                self.activate()
         else:
             self.log_debug(
-                'Deactivating, should_trigger=%s, last presence: %s, time: %s',
+                'Deactivating, should_trigger=%s, luminosity=%s, '
+                'last presence: %s, time: %s',
                 should_trigger,
+                measure.luminosity.value,
                 measure.presence.value,
                 int(time.time())
             )
             self.deactivate()
-
 
 
 def get_actors(config):
@@ -274,5 +291,3 @@ def get_actors(config):
                     active_time_limit=actor_active_time_limit,
                     inactive_time_limit=actor_inactive_time_limit,
                 )
-
-

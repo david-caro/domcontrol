@@ -42,9 +42,14 @@ def main(args=None):
         default=None
     )
     parser.add_argument(
-        '-w', '--with-web-server',
+        '--host',
         action='store',
         default='127.0.0.1'
+    )
+    parser.add_argument(
+        '-p', '--port',
+        action='store',
+        default='5000'
     )
     parser.add_argument(
         '-v', '--verbose',
@@ -53,7 +58,14 @@ def main(args=None):
     args = parser.parse_args()
 
     if args.verbose:
-        logging.root.setLevel(logging.DEBUG)
+        logging.root.setLevel(
+            logging.DEBUG,
+        )
+        logging.root.handlers[0].formatter._fmt = (
+            '%(asctime)s::%(levelname)s::'
+            '%(name)s.%(funcName)s:%(lineno)d::'
+            '%(message)s'
+        )
 
     conf.CONFIG = conf.load_config(
         args.config,
@@ -67,9 +79,10 @@ def main(args=None):
     )
 
     try:
+        LOGGER.info('Starting controller')
         controller.start()
         LOGGER.info('Starting web server')
-        web.app.run(args.with_web_server)
+        web.app.run(host=args.host, port=args.port)
     except:
         core.STOP.set()
         core.cleanup()

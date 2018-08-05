@@ -15,9 +15,8 @@
 #
 import time
 import logging
+import os
 import threading
-
-import RPi.GPIO as GPIO
 
 from . import (
     utils,
@@ -27,6 +26,13 @@ from . import (
     schedule as mod_schedule,
     conf as mod_conf,
 )
+
+
+if os.environ.get('DEBUG_MODE') == 'true':
+    from .fakes import DummyGPIO as GPIO
+else:
+    print os.environ.get('DEBUG_MODE')
+    import RPi.GPIO as GPIO
 
 
 LOGGER = logging.getLogger(__name__)
@@ -52,7 +58,6 @@ class Zone(object):
     def add_schedule(self, schedule):
         self.schedules[schedule.name] = schedule
 
-
     def do_measure(self):
         logging.info('zone.%s::Doing next measure', self.name)
         self.last_measure = self.get_measure()
@@ -61,17 +66,22 @@ class Zone(object):
         self.check_measure()
 
     def check_measure(self, measure=None, sensor=None, metrics=None):
+        LOGGER.debug('check_measure:: starting')
         if not self.last_measure and not measure:
             return
+
         elif not measure:
             measure = self.last_measure
+
         elif not self.last_measure:
             measure = measure
+
         else:
             measure = mod_metrics.get_mean_measure([
-                measure,
                 self.last_measure,
+                measure,
             ])
+            self.last_measure = measure
 
         if sensor:
             self.measures[sensor] = measure
@@ -102,6 +112,14 @@ class Zone(object):
                 raise RuntimeError('Stopping')
 
             self.measures[sensor_name] = sensor.read()
+            if (
+                'luminosity' in sensor.METRICS
+                or 'presence' in sensor.METRICS
+            ):
+                self.last_measure = mod_metrics.get_mean_measure([
+                    self.last_measure,
+                    self.measures[sensor_name],
+                ])
 
         return mod_metrics.get_mean_measure(self.measures.values())
 
@@ -160,6 +178,9 @@ def main_loop(config):
     graphite_url = config.get('general', 'graphite_url')
 
     ZONES = load_zones(config)
+    LOGGER.debug('Loaded zones:')
+    for zone in ZONES.keys():
+        LOGGER.debug('    %s', zone)
 
     while not STOP.is_set():
         changed_config = mod_conf.reload_config()

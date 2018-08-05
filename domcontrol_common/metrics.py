@@ -212,6 +212,7 @@ class Measure(object):
 
 
 def get_mean_measure(measures):
+    LOGGER.debug('get_mean_measure::starting %s' % measures)
     if not measures:
         return None
 
@@ -234,14 +235,31 @@ def get_mean_measure(measures):
 
             metrics[metric].append(value)
 
+    LOGGER.debug('get_mean_measure::    got metrics %s' % metrics)
     final_metrics = {}
     timestamp = str(int(time.time()))
     for metric, values in metrics.items():
-        if metric in ('luminosity', 'presence'):
+        if metric == 'presence':
             final_metrics[metric] = max(values)
+            LOGGER.debug(
+                'get_mean_measure::    presence %s->%s'
+                % (values, final_metrics[metric])
+            )
+            continue
+        if metric == 'luminosity':
+            LOGGER.debug('')
+            final_metrics[metric] = values[-1]
+            LOGGER.debug(
+                'get_mean_measure::    luminosity %s->%s'
+                % (values, final_metrics[metric])
+            )
             continue
 
         final_metrics[metric] = sum(values) / len(values)
+        LOGGER.debug(
+            'get_mean_measure::    %s %s->%s'
+            % (metric, values, final_metrics[metric])
+        )
 
     return Measure(timestamp=timestamp, **final_metrics)
 

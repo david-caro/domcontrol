@@ -16,17 +16,25 @@
 #
 import ConfigParser
 import logging
+import os
 import time
 import threading
 from functools import partial
-
-import Adafruit_DHT
-import RPi.GPIO as GPIO
 
 from . import (
     metrics as mod_metrics,
     utils,
 )
+
+
+if os.environ.get('DEBUG_MODE') == 'true':
+    from .fakes import (
+        DummyGPIO as GPIO,
+        DummyAdafruit_DHT as Adafruit_DHT,
+    )
+else:
+    import Adafruit_DHT
+    import RPi.GPIO as GPIO
 
 
 #: Registry for sensor types
@@ -139,18 +147,29 @@ class EventRaspberrySensorMixin(RaspberrySensorMixin):
             self.log_debug('\n    EVENT-- ignoring, already parsing event')
             return
 
+        time.sleep(0.1)
+        cur_value = GPIO.input(self.pin) and 1 or 0
+        if (
+            (
+                self.EVENT == GPIO.FALLING and cur_value
+                or self.EVENT == GPIO.RISING and not cur_value
+            ) and self.EVENT != GPIO.BOTH
+        ):
+            self.log_debug('\n    EVENT-- ignoring, false trigger')
+            return
+
         self.LOCK.acquire()
         try:
             if pin != self.pin:
-                self.log_debug('\n    EVENT-- ignoring, wrong channel %s' % pin)
+                self.log_debug(
+                    '\n    EVENT-- ignoring, wrong channel %s' % pin
+                )
                 return
 
             self.log_debug('\n    EVENT-- Event detected on channel %s' % pin)
-            measure = {}
-            for metric in self.METRICS:
-                measure[metric] = int(time.time())
 
-            self.last_measure = mod_metrics.Measure(**measure)
+            # make sure that last_measure is updated
+            self.read()
 
             for callback in self.callbacks:
                 callback(
@@ -162,22 +181,20 @@ class EventRaspberrySensorMixin(RaspberrySensorMixin):
             self.LOCK.release()
 
     def read(self):
-        self.log_debug('value=%s' % self.last_measure)
+        metrics = {}
+        for metric in self.METRICS:
+            metrics[metric] = GPIO.input(self.pin) and 1 or 0
+
+        self.last_measure = mod_metrics.Measure(**metrics)
+        self.log_debug('read %s' % self.last_measure)
         return self.last_measure
 
 
-class LightSensor(RaspberrySensorMixin):
+class LightSensor(EventRaspberrySensorMixin):
     METRICS = [
         'luminosity'
     ]
-
-    def read(self):
-        value = GPIO.input(self.pin) and 1 or 0
-        self.last_measure = mod_metrics.Measure(
-            luminosity=value
-        )
-        self.log_debug('value=%s' % self.last_measure)
-        return self.last_measure
+    EVENT = GPIO.BOTH
 
 
 class PresenceSensor(EventRaspberrySensorMixin):
@@ -185,6 +202,15 @@ class PresenceSensor(EventRaspberrySensorMixin):
         'presence'
     ]
     EVENT = GPIO.FALLING
+
+    def read(self):
+        cur_value = GPIO.input(self.pin)
+        if cur_value == 0:
+            self.last_measure = mod_metrics.Measure(
+                presence=int(time.time())
+            )
+        self.log_debug('read %s' % self.last_measure)
+        return self.last_measure
 
 
 class DHTSensor(RaspberrySensorMixin):
@@ -214,8 +240,8 @@ class DHTSensor(RaspberrySensorMixin):
 
     def read(self):
         """
-        Gets a valid read measure (right now it has to retry a few times, read a
-        couple values and returns the max as there are low value outliers)
+        Gets a valid read measure (right now it has to retry a few times, read
+        a couple values and returns the max as there are low value outliers)
 
         Very dependent on the hardware
 

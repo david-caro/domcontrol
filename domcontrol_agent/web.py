@@ -127,7 +127,6 @@ def get_measures():
     return json_dumps(measures)
 
 
-
 @app_post('/<zone>/actor/<elem_name>/<attr_name>')
 def set_attr(zone, elem_type='actor', elem_name=None, attr_name=None):
     try:
